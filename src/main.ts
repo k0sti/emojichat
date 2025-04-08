@@ -1,8 +1,9 @@
-import { RelayPool, SubscriptionResponse, PublishResponse } from 'applesauce-relay'; // Import needed types
-import { EventStore, QueryStore } from 'applesauce-core'; // Removed Queries import object
-import { TimelineQuery } from 'applesauce-core/queries/simple'; // Import TimelineQuery instead
-import { NostrEvent, Filter, Event, EventTemplate } from 'nostr-tools'; // Added EventTemplate
+import { RelayPool, SubscriptionResponse, PublishResponse, completeOnEose } from 'applesauce-relay'; // Import needed types + completeOnEose
+import { EventStore, QueryStore } from 'applesauce-core';
+import { TimelineQuery } from 'applesauce-core/queries/simple';
+import { NostrEvent, Filter, Event, EventTemplate } from 'nostr-tools';
 import { tap } from 'rxjs/operators';
+import { merge, of, catchError } from 'rxjs'; // Import missing operators
 import { firstValueFrom } from 'rxjs'; // Import firstValueFrom
 import { ExtensionSigner } from 'applesauce-signers'; // Import ExtensionSigner
 
@@ -28,7 +29,8 @@ const pool = new RelayPool();
 const eventStore = new EventStore();
 const queryStore = new QueryStore(eventStore); // Link QueryStore to EventStore
 
-let notesSubscription: any | null = null;
+let historySubscription: any | null = null; // For initial history
+let liveSubscription: any | null = null; // For live updates
 // Initialize the relay group immediately after the pool
 const relayGroup = pool.group(relays);
 console.log(`RelayGroup initialized immediately for: ${relays.join(', ')}`);
@@ -176,11 +178,16 @@ async function fetchNotes() {
     connectBtn.disabled = true;
     notesListDiv.innerHTML = ''; // Clear previous notes
 
-    // Unsubscribe from previous notes subscription if it exists
-    if (notesSubscription) {
-        console.log('Unsubscribing from previous notes request.');
-        notesSubscription.unsubscribe();
-        notesSubscription = null;
+    // Unsubscribe from previous subscriptions if they exist
+    if (historySubscription) {
+        console.log('Unsubscribing from previous history request.');
+        historySubscription.unsubscribe();
+        historySubscription = null;
+    }
+    if (liveSubscription) {
+        console.log('Unsubscribing from previous live request.');
+        liveSubscription.unsubscribe();
+        liveSubscription = null;
     }
 
     try {
@@ -190,72 +197,89 @@ async function fetchNotes() {
         // Relay group is already initialized globally
         console.log(`Using pre-initialized RelayGroup for: ${relays.join(', ')}`);
 
-        // 3. Define the filter for the request
-        const filters: Filter[] = [{
+        // 3. Define filters for history and live updates
+        const historyLimit = 20;
+        const historyFilter: Filter[] = [{
             kinds: [1],
-            limit: 20, // Fetch latest 20 notes
+            limit: historyLimit,
         }];
-        console.log('Requesting filters:', JSON.stringify(filters));
+        const liveFilter: Filter[] = [{
+            kinds: [1],
+            // No limit, no since - just live kind 1
+        }];
 
-        // 4. Make the request and subscribe
-        notesSubscription = relayGroup.req(filters).pipe(
-            // Tap into the stream BEFORE the final subscription
-            // @ts-ignore - Suppressing RxJS version conflict error
-            tap((response: any) => { // Use 'any' as workaround for RxJS type conflict
-                // Add events to the EventStore, ignore EOSE here
-                if (typeof response !== 'string' && response?.kind !== undefined) {
-                     // Basic validation before adding
-                    if (response.content !== undefined && response.pubkey !== undefined && response.created_at !== undefined) {
-                        // console.log('Adding event to EventStore:', response.id, 'Kind:', response.kind); // Keep log concise
-                        eventStore.add(response as NostrEvent);
-                    } else {
-                         console.warn('Received invalid event structure, not adding to store:', response);
-                    }
-                }
-            })
-        ).subscribe({ // Keep subscribe for EOSE, errors, completion
-            next(response) {
-                if (response === "EOSE") {
-                    console.log('Received EOSE');
-                    // You might receive EOSE from multiple relays in the group.
-                    // Consider how to handle this - maybe update status only once.
-                    if (statusDiv) statusDiv.textContent = 'Status: Feed Loaded (EOSE received)';
-                    if (connectBtn) connectBtn.disabled = false; // Re-enable button after EOSE
+        console.log('Requesting history filter:', JSON.stringify(historyFilter));
+        console.log('Requesting live filter:', JSON.stringify(liveFilter));
+
+        // Shared tap operator for adding events to the store
+        const storeEventTap = tap((response: any) => { // Use 'any' as workaround
+            if (typeof response !== 'string' && response?.kind !== undefined) {
+                if (response.content !== undefined && response.pubkey !== undefined && response.created_at !== undefined) {
+                    console.log(`[storeEventTap] Attempting to add event: ${response.id} Kind: ${response.kind} Content: "${response.content}"`);
+                    eventStore.add(response as NostrEvent);
                 } else {
-                    // Event processing is now handled in the 'tap' operator above.
-                    // We only log receipt here for debugging if needed.
-                    const event = response as NostrEvent;
-                    console.log('Network received event:', event.id);
-                    // DOM manipulation removed from here. It will be driven by QueryStore later.
+                     console.warn('Received invalid event structure, not adding to store:', response);
                 }
-            },
-            error(err) {
-                console.error('Subscription error:', err);
-                if (statusDiv) statusDiv.textContent = `Status: Error - ${err.message || 'Subscription failed'}`;
-                if (connectBtn) connectBtn.disabled = false;
-            },
-            complete() {
-                // This might be called if the underlying observable completes,
-                // which could happen if all relays disconnect or the subscription is closed manually.
-                console.log('Subscription stream completed.');
-                 if (statusDiv && statusDiv.textContent?.includes('Fetching')) {
-                    statusDiv.textContent = 'Status: Stream completed (check console for details)';
-                 }
-                if (connectBtn) connectBtn.disabled = false;
             }
         });
 
-         // Optional: Timeout to re-enable button if EOSE doesn't fire quickly
-         setTimeout(() => {
-            if (connectBtn?.disabled) {
-                 console.log('Timeout reached, enabling button.');
-                 if (statusDiv) statusDiv.textContent = 'Status: Feed Loaded (Timeout)';
-                 connectBtn.disabled = false;
-                 // Don't necessarily unsubscribe here, as events might still arrive
+        // 4a. Make the history request using RelayGroup (completes on EOSE)
+        historySubscription = relayGroup.req(historyFilter).pipe(
+            // @ts-ignore - Suppressing RxJS version conflict error
+            storeEventTap,
+            completeOnEose()
+        ).subscribe({
+            next: (response) => {
+                console.log('History received event:', (response as NostrEvent).id);
+            },
+            error: (err: any) => {
+                console.error('History subscription error:', err);
+                if (statusDiv) statusDiv.textContent = `Status: History Error - ${err.message || 'Subscription failed'}`;
+            },
+            complete: () => {
+                console.log('History subscription completed after EOSE.');
+                if (statusDiv) statusDiv.textContent = 'Status: History Loaded, Listening for Live...';
             }
-        }, 20000); // 20 second timeout
+        });
 
+        // 4b. Manually create and merge live subscriptions for each relay
+        const liveRelayStreams = relayGroup.relays.map(relay =>
+            relay.req(liveFilter).pipe(
+                // @ts-ignore - Suppressing RxJS version conflict error
+                storeEventTap, // Add events to store
+                catchError((err: any) => { // Catch error for individual relay, explicitly type err
+                    console.error(`Live subscription error for ${relay.url}:`, err);
+                    return of(); // Return empty observable to prevent stopping the merge
+                })
+            )
+        );
+// @ts-ignore - Suppressing RxJS version conflict error for merge
+liveSubscription = merge(...liveRelayStreams).subscribe({
+        // Removed duplicate line
+             next: (response: any) => {
+                 // We only care about events here, EOSE is not relevant for the merged stream
+                 if (typeof response !== 'string') {
+                     console.log('Live received event:', (response as NostrEvent).id);
+                     // Update status only once after history is done
+                     if (statusDiv && statusDiv.textContent?.includes('Listening')) {
+                         statusDiv.textContent = 'Status: Live Feed Active';
+                     }
+                 }
+                 // Individual relay EOSEs are ignored by this subscriber
+             },
+             error: (err: any) => {
+                 // This error handler might not be reached if individual streams handle errors
+                 console.error('Merged live subscription error (unexpected):', err);
+                 if (statusDiv) statusDiv.textContent = `Status: Live Feed Error - ${err.message || 'Subscription failed'}`;
+             },
+             complete: () => {
+                 // This should not complete unless all relays disconnect AND handle errors with of()
+                 console.log('Merged live subscription stream completed (unexpected?).');
+                 if (statusDiv) statusDiv.textContent = 'Status: Live Feed Disconnected';
+             }
+         });
 
+        // Removed separate live subscription block
     } catch (error) {
         console.error('Error setting up RelayGroup or subscription:', error);
         const errorMessage = error instanceof Error ? error.message : String(error);
