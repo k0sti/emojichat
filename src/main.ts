@@ -1,6 +1,7 @@
 import { RelayPool, SubscriptionResponse, PublishResponse, completeOnEose } from 'applesauce-relay'; // Import needed types + completeOnEose
 import { EventStore, QueryStore } from 'applesauce-core';
 import { TimelineQuery } from 'applesauce-core/queries/simple';
+import { getNip10References } from 'applesauce-core/helpers/threading'; // Import NIP-10 helper
 import { NostrEvent, Filter, Event, EventTemplate } from 'nostr-tools';
 import { tap } from 'rxjs/operators';
 import { merge, of, catchError } from 'rxjs'; // Import missing operators
@@ -448,27 +449,66 @@ function getProfileHtml(pubkey: string): string {
         return;
     }
 
-    // Render the filtered notes
-    emojiNotes.forEach(event => {
-        const noteElement = document.createElement('div');
-        // Use the message class from index.html for consistency
-        noteElement.classList.add('message'); // Changed from 'note' to 'message'
+    // --- Threading Logic ---
+    const notesById = new Map<string, NostrEvent>();
+    const repliesByParentId = new Map<string, string[]>();
+    const replyIds = new Set<string>();
 
-        // Get profile HTML using the helper function
-        const profileHtml = getProfileHtml(event.pubkey);
+    emojiNotes.forEach(note => {
+        notesById.set(note.id, note);
+        const refs = getNip10References(note);
+        // Use the direct reply ("e" tag) as parent, ignore "a" tags for simplicity
+        const parentId = refs.reply?.e?.id;
 
-        // Updated rendering - includes profile pic and reply button
-        noteElement.innerHTML = `
-            ${profileHtml} <!-- Profile picture/Robohash -->
-            <div class="message-content">${event.content}</div> <!-- Use message-content class -->
-            <div class="message-actions"> <!-- Use message-actions class -->
-                 <button class="reply-btn" data-event-id="${event.id}" data-pubkey="${event.pubkey}" title="Reply to this note">↩️ Reply</button>
-            </div>
-            <!-- Optional: Add timestamp/author info if desired -->
-            <!-- <small>By: ${event.pubkey.substring(0, 8)}... at ${new Date(event.created_at * 1000).toLocaleString()}</small> -->
-        `;
-        notesListDiv!.appendChild(noteElement); // Append to keep order
+        if (parentId) {
+            replyIds.add(note.id);
+            if (!repliesByParentId.has(parentId)) {
+                repliesByParentId.set(parentId, []);
+            }
+            repliesByParentId.get(parentId)!.push(note.id);
+        }
     });
+
+    // Identify top-level notes (not replies to other notes in this set)
+    const topLevelNotes = emojiNotes
+        .filter(note => !replyIds.has(note.id))
+        .sort((a, b) => b.created_at - a.created_at); // Sort newest first
+
+    // Recursive rendering function
+    const renderNoteAndReplies = (noteId: string, level: number) => {
+        const note = notesById.get(noteId);
+        if (!note || !notesListDiv) return; // Check notesListDiv again just in case
+
+        const noteElement = document.createElement('div');
+        noteElement.classList.add('message');
+        noteElement.style.marginLeft = `${level * 30}px`; // Apply indentation
+
+        const profileHtml = getProfileHtml(note.pubkey);
+        noteElement.innerHTML = `
+            ${profileHtml}
+            <div class="message-content">${note.content}</div>
+            <div class="message-actions">
+                 <button class="reply-btn" data-event-id="${note.id}" data-pubkey="${note.pubkey}" title="Reply to this note">↩️ Reply</button>
+            </div>
+        `;
+        notesListDiv.appendChild(noteElement);
+
+        // Render replies
+        const childIds = repliesByParentId.get(noteId);
+        if (childIds) {
+            // Sort replies chronologically within the thread
+            const sortedChildIds = childIds.sort((aId, bId) => {
+                const aNote = notesById.get(aId);
+                const bNote = notesById.get(bId);
+                return (aNote?.created_at ?? 0) - (bNote?.created_at ?? 0);
+            });
+            sortedChildIds.forEach(replyId => renderNoteAndReplies(replyId, level + 1));
+        }
+    };
+
+    // Clear the list and render threads starting from top-level notes
+    // notesListDiv.innerHTML = ''; // Already cleared earlier
+    topLevelNotes.forEach(note => renderNoteAndReplies(note.id, 0));
 });
 
 // Note: The actual fetching is triggered by fetchNotes() which calls group.req()
