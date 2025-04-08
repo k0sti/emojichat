@@ -4,7 +4,7 @@ import { TimelineQuery } from 'applesauce-core/queries/simple';
 import { getNip10References } from 'applesauce-core/helpers/threading'; // Import NIP-10 helper
 import { NostrEvent, Filter, Event, EventTemplate } from 'nostr-tools';
 import { tap } from 'rxjs/operators';
-import { merge, of, catchError } from 'rxjs'; // Import missing operators
+import { merge, of, catchError, retry, delay, timer } from 'rxjs'; // Import timer for retry delay
 import { firstValueFrom } from 'rxjs'; // Import firstValueFrom
 import { ExtensionSigner } from 'applesauce-signers'; // Import ExtensionSigner
 
@@ -248,9 +248,13 @@ async function fetchNotes() {
             relay.req(liveFilter).pipe(
                 // @ts-ignore - Suppressing RxJS version conflict error
                 storeEventTap, // Add events to store
-                catchError((err: any) => { // Catch error for individual relay, explicitly type err
-                    console.error(`Live subscription error for ${relay.url}:`, err);
-                    return of(); // Return empty observable to prevent stopping the merge
+                // Removed catchError, using retry instead
+                retry({ // Add retry logic
+                    delay: (error, retryCount) => {
+                        console.warn(`Live subscription error for ${relay.url} (retry ${retryCount}):`, error);
+                        console.log(`Retrying connection to ${relay.url} in 5 seconds...`);
+                        return timer(5000); // Use timer for delay
+                    }
                 })
             )
         );
