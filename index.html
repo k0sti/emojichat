@@ -30,7 +30,26 @@
         .message-actions button { background: none; border: none; font-size: 1.2em; cursor: pointer; padding: 5px; }
         .compose { display: flex; align-items: center; border: 1px solid #ccc; border-radius: 5px; padding: 5px; }
         .compose-input { flex-grow: 1; min-height: 40px; padding: 5px 10px; font-size: 1.5em; border: none; outline: none; background-color: #f9f9f9; border-radius: 3px; margin-right: 10px; }
-        .compose-button { background: none; border: none; font-size: 1.8em; cursor: pointer; padding: 5px; }
+        .compose-button { background: none; border: none; font-size: 1.8em; cursor: pointer; padding: 5px; line-height: 1; /* Align icons better */ }
+        .cancel-reply-btn { background: none; border: none; font-size: 1.5em; cursor: pointer; padding: 5px; color: #dc3545; line-height: 1; margin-left: 5px; }
+        .cancel-reply-btn:hover { color: #a71d2a; }
+        #cancel-reply-container { display: none; /* Hidden by default */ }
+        /* Spinner styles */
+        .compose-button.sending::before {
+            content: '';
+            display: inline-block;
+            width: 1em; /* Adjust size relative to font-size */
+            height: 1em;
+            margin-right: 0.3em;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spinner-border .75s linear infinite;
+            vertical-align: -0.125em; /* Align better with text */
+        }
+        @keyframes spinner-border {
+            to { transform: rotate(360deg); }
+        }
         .emoji-panel { width: 300px; padding: 20px; background-color: #f8f8f8; margin: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow-y: auto; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; }
         .emoji-panel span { font-size: 2em; cursor: pointer; padding: 5px; border-radius: 4px; transition: background-color 0.2s; }
         .emoji-panel span:hover { background-color: #ddd; }
@@ -67,7 +86,7 @@
                     <div class="profile-pic">👤</div>
                     <div class="message-content">👋🎉🥳</div>
                     <div class="message-actions">
-                        <button title="Reply">↩️</button> <!-- Original index.html had reply buttons, keeping similar structure -->
+                        <button>↩️</button> <!-- Removed title -->
                     </div>
                 </div>
                 <!-- Example Message 2 (Reply) -->
@@ -75,7 +94,7 @@
                     <div class="profile-pic">👤</div>
                     <div class="message-content">👍💯</div>
                     <div class="message-actions">
-                        <button title="Reply">↩️</button>
+                        <button>↩️</button> <!-- Removed title -->
                     </div>
                 </div>
                  <!-- Example Message 3 -->
@@ -83,16 +102,18 @@
                     <div class="profile-pic">👤</div>
                     <div class="message-content">🚀✨💡</div>
                     <div class="message-actions">
-                        <button title="Reply">↩️</button>
+                        <button>↩️</button> <!-- Removed title -->
                     </div>
                 </div>
             </div>
             <!-- Mapped compose-area ID -->
-            <div class="compose" id="compose-area">
+            <div class="compose" id="compose-area" style="display: none;"> <!-- Hide initially -->
                  <!-- Mapped compose-input ID -->
                 <div class="compose-input" id="compose-input" contenteditable="true" title="Compose new note..."></div>
+                 <!-- Container for Cancel Button -->
+                 <span id="cancel-reply-container"></span>
                  <!-- Mapped sendBtn ID -->
-                <button class="compose-button" id="sendBtn" title="Send">➡️</button>
+                <button class="compose-button" id="sendBtn">➡️</button> <!-- Removed title -->
             </div>
         </div>
          <!-- Mapped emoji-panel ID -->

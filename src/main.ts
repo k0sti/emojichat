@@ -23,6 +23,8 @@ let composeInputDiv: HTMLElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
 let emojiPanelDiv: HTMLElement | null = null;
 let userProfilePicContainer: HTMLElement | null = null; // For status bar profile pic
+let mainContentDiv: HTMLElement | null = null; // Default parent for compose area
+let cancelReplyContainer: HTMLElement | null = null; // Container for cancel button
 const relays = ['wss://relay.nexel.space']; // Example relays
 
 // 1. Initialize RelayPool
@@ -64,6 +66,8 @@ document.addEventListener('DOMContentLoaded', () => {
     sendBtn = document.getElementById('sendBtn') as HTMLButtonElement | null;
     emojiPanelDiv = document.getElementById('emoji-panel');
     userProfilePicContainer = document.getElementById('user-profile-pic-container'); // Assign status bar container
+    cancelReplyContainer = document.getElementById('cancel-reply-container'); // Assign cancel container
+    mainContentDiv = document.querySelector('.main-content'); // Assign default parent for compose area
 
     // --- Status Bar Profile Pic Update ---
     function updateUserStatusBarProfilePic(pubkey: string) {
@@ -155,9 +159,10 @@ document.addEventListener('DOMContentLoaded', () => {
                  error: (err: any) => console.error("Error fetching logged-in user profile:", err)
              });
         }
-        // Show compose area after connecting
-        if (composeAreaDiv) {
-            composeAreaDiv.style.display = 'block';
+        // Show compose area after connecting by appending it to main content
+        if (mainContentDiv && composeAreaDiv) {
+            composeAreaDiv.style.display = 'flex'; // Use flex to align items
+            mainContentDiv.appendChild(composeAreaDiv);
         }
     } catch (error) {
         console.error('NIP-07 connection error:', error);
@@ -492,7 +497,7 @@ function getProfileHtml(pubkey: string): string {
             ${profileHtml}
             <div class="message-content">${note.content}</div>
             <div class="message-actions">
-                 <button class="reply-btn" data-event-id="${note.id}" data-pubkey="${note.pubkey}" title="Reply to this note">↩️ Reply</button>
+                 <button class="reply-btn" data-event-id="${note.id}" data-pubkey="${note.pubkey}">↩️</button> <!-- Title already removed -->
             </div>
         `;
         notesListDiv.appendChild(noteElement);
@@ -541,7 +546,8 @@ function getProfileHtml(pubkey: string): string {
 
 
     sendBtn.disabled = true;
-    sendBtn.textContent = 'Sending...';
+    sendBtn.textContent = ''; // Clear icon before showing spinner
+    sendBtn.classList.add('sending'); // Add spinner class
     console.log(`Attempting to send: ${content}`);
 
     try {
@@ -582,6 +588,12 @@ function getProfileHtml(pubkey: string): string {
 
         console.log(`Published event ${signedEvent.id}`, replyContext ? `in reply to ${replyContext.eventId}` : '');
         composeInputDiv.textContent = ''; // Clear input on success
+        // Move compose area back to default position
+        // Move compose area back to default position and reset UI
+        if (mainContentDiv && composeAreaDiv) {
+            mainContentDiv.appendChild(composeAreaDiv);
+        }
+        updateComposeUI(false); // Reset button icon and hide cancel button
         replyContext = null; // Clear reply context after successful send
         // TODO: Update UI to remove reply indication if any was added
 
@@ -590,7 +602,8 @@ function getProfileHtml(pubkey: string): string {
         alert(`Error sending note: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
         sendBtn.disabled = false;
-        sendBtn.textContent = '➡️ Send';
+        sendBtn.classList.remove('sending'); // Remove spinner class
+        // Icon is restored by updateComposeUI called in sendNote success path
     }
     }
 
@@ -621,33 +634,71 @@ function getProfileHtml(pubkey: string): string {
         console.error("Emoji panel or compose input not found after DOMContentLoaded");
     }
 
+// --- UI Update Function ---
+function updateComposeUI(isReplying: boolean) {
+    if (!sendBtn || !cancelReplyContainer) return;
+
+    if (isReplying) {
+        sendBtn.textContent = '↩️'; // Reply icon
+        sendBtn.title = 'Send Reply';
+
+        // Create and add cancel button if it doesn't exist
+        if (!cancelReplyContainer.querySelector('.cancel-reply-btn')) {
+            const cancelButton = document.createElement('button');
+            cancelButton.textContent = '❌';
+            cancelButton.title = 'Cancel Reply';
+            cancelButton.classList.add('cancel-reply-btn');
+            cancelButton.addEventListener('click', () => {
+                replyContext = null; // Clear reply context
+                updateComposeUI(false); // Reset UI
+                // Move compose area back to default
+                if (mainContentDiv && composeAreaDiv) {
+                    mainContentDiv.appendChild(composeAreaDiv);
+                }
+                if (composeInputDiv) composeInputDiv.textContent = ''; // Clear input
+            });
+            cancelReplyContainer.appendChild(cancelButton);
+        }
+        cancelReplyContainer.style.display = 'inline'; // Show container
+    } else {
+        sendBtn.textContent = '➡️'; // Default send icon
+        sendBtn.title = 'Send';
+        // Remove cancel button and hide container
+        cancelReplyContainer.innerHTML = ''; // Clear container
+        cancelReplyContainer.style.display = 'none'; // Hide container
+    }
+}
+
+
 // --- Step 6: Replying to Notes ---
 
 // Add event listener for reply buttons (using event delegation on notes list)
     // --- Replying to Notes ---
-    if (notesListDiv && composeInputDiv) {
+    if (notesListDiv && composeInputDiv && composeAreaDiv) { // Ensure composeAreaDiv exists
         notesListDiv.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('reply-btn')) {
                 const eventId = target.getAttribute('data-event-id');
                 const pubkey = target.getAttribute('data-pubkey');
+                const messageElement = target.closest('.message'); // Find the parent message div
 
-                if (eventId && pubkey) {
+                if (eventId && pubkey && messageElement && composeAreaDiv) {
                     replyContext = { eventId, pubkey };
-                    // console.log('Set reply context:', replyContext); // Removed debug log
-                    // Optional: Update UI to indicate a reply is being composed
-                    // Need to check composeInputDiv again inside the listener
+
+                    // Move compose area below the message being replied to
+                    messageElement.insertAdjacentElement('afterend', composeAreaDiv);
+                    updateComposeUI(true); // Update button icon and show cancel button
+
+                    // Focus input
                      const currentComposeInput = document.getElementById('compose-input');
                      if (currentComposeInput) {
-                        currentComposeInput.focus(); // Focus input for reply
+                        currentComposeInput.focus();
                      }
-                    // You could add a visual indicator near the compose box
-                    alert(`Replying to note ${eventId.substring(0, 6)}... by ${pubkey.substring(0, 6)}...`); // Simple alert for now
                 }
             }
         });
     } else {
-         console.error("Notes list or compose input not found for reply listener after DOMContentLoaded");
+         console.error("Required elements (notesListDiv, composeInputDiv, composeAreaDiv) not found for reply listener setup.");
     }
 
 }); // End of DOMContentLoaded listener
