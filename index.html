@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Nostr Client</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
+        #notes { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
+        .note { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .note p { margin: 0; }
+        .note small { color: #666; }
+    </style>
+</head>
+<body>
+    <h1>Simple Nostr Client</h1>
+    <button id="connectBtn">Connect & Fetch Notes</button>
+    <div id="status">Status: Not Connected</div>
+    <div id="notes">
+        <h2>Notes Feed</h2>
+        <div id="notes-list"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
