@@ -3,24 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Nostr Client</title>
+    <title>🎨 EmojiChat Design</title> <!-- Updated Title -->
     <style>
-        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
-        #notes { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
-        .note { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
-        .note p { margin: 0; }
-        .note small { color: #666; }
+        body { font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; background-color: #f0f0f0; }
+        .top-panel { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background-color: #fff; border-bottom: 1px solid #eee; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .panel-left, .panel-right { flex: 1; }
+        .panel-center { text-align: center; }
+        .panel-right { text-align: right; display: flex; align-items: center; justify-content: flex-end; } /* Added flex for alignment */
+        .app-name { font-size: 1.5em; font-weight: bold; display: inline-flex; align-items: center; }
+        .app-name span { margin-right: 5px; }
+        .connect-button { background-color: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 1em; margin-right: 10px; /* Added margin */ }
+        .connect-button:hover { background-color: #0056b3; }
+        #status { margin-right: 15px; color: #666; font-size: 0.9em; } /* Style for status */
+        .top-links a { margin-left: 15px; font-size: 1.5em; text-decoration: none; color: #555; display: inline-flex; align-items: center; }
+        .top-links a:hover { color: #000; }
+        .icon-img { height: 1.2em; vertical-align: middle; margin: 0 2px; filter: invert(35%) sepia(0%) saturate(0%) hue-rotate(175deg) brightness(95%) contrast(85%); }
+        .top-links a:hover .icon-img { filter: none; }
+        .app-name .icon-img { height: 1em; margin-right: 5px; filter: none; }
+        .container { display: flex; width: 100%; flex-grow: 1; overflow: hidden; }
+        .main-content { flex-grow: 1; display: flex; flex-direction: column; padding: 20px; background-color: #fff; margin: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .messages { flex-grow: 1; overflow-y: auto; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .message { background-color: #e7f3ff; padding: 10px; margin-bottom: 10px; border-radius: 5px; display: flex; align-items: center; }
+        .profile-pic { width: 30px; height: 30px; background-color: #bbb; border-radius: 50%; margin-right: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2em; color: white; flex-shrink: 0; }
+        .message-content { font-size: 1.5em; flex-grow: 1; }
+        .message-actions { margin-left: auto; }
+        .message-actions button { background: none; border: none; font-size: 1.2em; cursor: pointer; padding: 5px; }
+        .compose { display: flex; align-items: center; border: 1px solid #ccc; border-radius: 5px; padding: 5px; }
+        .compose-input { flex-grow: 1; min-height: 40px; padding: 5px 10px; font-size: 1.5em; border: none; outline: none; background-color: #f9f9f9; border-radius: 3px; margin-right: 10px; }
+        .compose-button { background: none; border: none; font-size: 1.8em; cursor: pointer; padding: 5px; }
+        .emoji-panel { width: 300px; padding: 20px; background-color: #f8f8f8; margin: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow-y: auto; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; }
+        .emoji-panel span { font-size: 2em; cursor: pointer; padding: 5px; border-radius: 4px; transition: background-color 0.2s; }
+        .emoji-panel span:hover { background-color: #ddd; }
     </style>
 </head>
 <body>
-    <h1>Simple Nostr Client</h1>
-    <button id="connectBtn">Connect & Fetch Notes</button>
-    <div id="status">Status: Not Connected</div>
-    <div id="notes">
-        <h2>Notes Feed</h2>
-        <div id="notes-list"></div>
+    <div class="top-panel">
+        <div class="panel-left"></div>
+        <div class="panel-center">
+             <div class="app-name">
+                <img src="icons/nostr.svg" alt="Nostr Logo" class="icon-img"><span>💬</span>
+            </div>
+        </div>
+        <div class="panel-right">
+            <div id="status">Status: Not Connected</div> <!-- Added Status Div -->
+            <button class="connect-button" id="connectBtn">🔌</button> <!-- Added ID -->
+            <!-- Placeholder for connected state: <div class="profile-pic">👤</div> -->
+            <span class="top-links">
+                <a href="#" title="Info">❓</a>
+                <a href="#" title="GitHub"><img src="icons/github.svg" alt="GitHub" class="icon-img"></a>
+            </span>
+        </div>
     </div>
-
+    <div class="container">
+        <div class="main-content">
+            <!-- Mapped notes and notes-list IDs to messages div -->
+            <div class="messages" id="notes" id="notes-list">
+                <!-- Example Message 1 -->
+                <div class="message">
+                    <div class="profile-pic">👤</div>
+                    <div class="message-content">👋🎉🥳</div>
+                    <div class="message-actions">
+                        <button title="Reply">↩️</button> <!-- Original index.html had reply buttons, keeping similar structure -->
+                    </div>
+                </div>
+                <!-- Example Message 2 (Reply) -->
+                <div class="message" style="margin-left: 30px; background-color: #dff0d8;">
+                    <div class="profile-pic">👤</div>
+                    <div class="message-content">👍💯</div>
+                    <div class="message-actions">
+                        <button title="Reply">↩️</button>
+                    </div>
+                </div>
+                 <!-- Example Message 3 -->
+                <div class="message">
+                    <div class="profile-pic">👤</div>
+                    <div class="message-content">🚀✨💡</div>
+                    <div class="message-actions">
+                        <button title="Reply">↩️</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Mapped compose-area ID -->
+            <div class="compose" id="compose-area">
+                 <!-- Mapped compose-input ID -->
+                <div class="compose-input" id="compose-input" contenteditable="true" title="Compose new note..."></div>
+                 <!-- Mapped sendBtn ID -->
+                <button class="compose-button" id="sendBtn" title="Send">➡️</button>
+            </div>
+        </div>
+         <!-- Mapped emoji-panel ID -->
+        <div class="emoji-panel" id="emoji-panel">
+            <!-- Example Emojis -->
+            <span>😀</span> <span>😂</span> <span>😍</span> <span>🤔</span> <span>👍</span> <span>👎</span>
+            <span>❤️</span> <span>🔥</span> <span>🎉</span> <span>✨</span> <span>🚀</span> <span>💡</span>
+            <span>👋</span> <span>💯</span> <span>🥳</span> <span>🍕</span> <span>🍎</span> <span>⚽</span>
+            <span>🚗</span> <span>✈️</span> <span>💻</span> <span>📱</span> <span>⌚</span> <span>⚙️</span>
+            <span>↩️</span> <span>➡️</span> <span>❓</span> <span>❗</span> <span>✅</span> <span>❌</span>
+            <!-- Add more emojis as needed -->
+        </div>
+    </div>
+    <!-- Added script from original index.html -->
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

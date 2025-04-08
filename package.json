@@ -16,6 +16,7 @@
     "applesauce-core": "file:./applesauce/packages/core",
     "applesauce-loaders": "file:./applesauce/packages/loaders",
     "applesauce-relay": "file:./applesauce/packages/relay",
+    "applesauce-signers": "file:applesauce/packages/signers",
     "nostr-tools": "^2.10.4",
     "rxjs": "^7.8.1"
   }
