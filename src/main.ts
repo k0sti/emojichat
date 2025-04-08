@@ -1,4 +1,4 @@
-import { RelayPool } from 'applesauce-relay';
+import { RelayPool, SubscriptionResponse, PublishResponse } from 'applesauce-relay'; // Import needed types
 import { EventStore, QueryStore } from 'applesauce-core'; // Removed Queries import object
 import { TimelineQuery } from 'applesauce-core/queries/simple'; // Import TimelineQuery instead
 import { NostrEvent, Filter, Event, EventTemplate } from 'nostr-tools'; // Added EventTemplate
@@ -12,15 +12,15 @@ console.log('EmojiChat Client Script Loaded');
 let userPubkey: string | null = null;
 let nip07Signer: ExtensionSigner | null = null; // Use ExtensionSigner type
 
-const connectBtn = document.getElementById('connectBtn') as HTMLButtonElement | null;
-const statusDiv = document.getElementById('status');
-const notesListDiv = document.getElementById('notes-list');
-const composeAreaDiv = document.getElementById('compose-area');
-const composeInputDiv = document.getElementById('compose-input');
-const sendBtn = document.getElementById('sendBtn') as HTMLButtonElement | null;
-const emojiPanelDiv = document.getElementById('emoji-panel');
-
-const relays = ['wss://relay.damus.io', 'wss://relay.primal.net']; // Example relays
+// Declare variables for DOM elements, but assign them inside DOMContentLoaded
+let connectBtn: HTMLButtonElement | null = null;
+let statusDiv: HTMLElement | null = null;
+let notesListDiv: HTMLElement | null = null;
+let composeAreaDiv: HTMLElement | null = null;
+let composeInputDiv: HTMLElement | null = null;
+let sendBtn: HTMLButtonElement | null = null;
+let emojiPanelDiv: HTMLElement | null = null;
+const relays = ['wss://relay.nexel.space']; // Example relays
 
 // 1. Initialize RelayPool
 const pool = new RelayPool();
@@ -33,9 +33,35 @@ const relayGroup = pool.group(relays);
 console.log(`RelayGroup initialized immediately for: ${relays.join(', ')}`);
 let replyContext: { eventId: string; pubkey: string } | null = null; // To store reply target
 // Removed duplicate declaration
+const requestedProfilePubkeys = new Set<string>(); // Track requested profile pubkeys
+let profileSubscription: any | null = null; // To manage the profile request subscription
+
+// Define ProfileData interface
+interface ProfileData {
+    picture?: string;
+    name?: string;
+    created_at?: number; // Add timestamp to compare events
+}
+
+// Profile Cache
+const profileCache = new Map<string, ProfileData>();
 
 // Function to handle NIP-07 connection
-async function connectNip07() {
+// --- DOM Ready Execution ---
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM fully loaded and parsed');
+
+    // Assign DOM elements now that they exist
+    connectBtn = document.getElementById('connectBtn') as HTMLButtonElement | null;
+    statusDiv = document.getElementById('status');
+    notesListDiv = document.getElementById('notes-list');
+    composeAreaDiv = document.getElementById('compose-area');
+    composeInputDiv = document.getElementById('compose-input');
+    sendBtn = document.getElementById('sendBtn') as HTMLButtonElement | null;
+    emojiPanelDiv = document.getElementById('emoji-panel');
+
+    // --- NIP-07 Connection ---
+    async function connectNip07() {
     if (!statusDiv || !connectBtn) {
         console.error('Required HTML elements not found for NIP-07 connect');
         return;
@@ -51,11 +77,15 @@ async function connectNip07() {
         userPubkey = await nip07Signer.getPublicKey();
         console.log('Connected with pubkey:', userPubkey);
         statusDiv.textContent = `Status: Connected as ${userPubkey.substring(0, 8)}...`;
-        connectBtn.textContent = 'Fetch Notes'; // Change button text
-        // Remove old listener, add new one for fetching
+        // connectBtn.textContent = 'Fetch Notes'; // No longer needed
+        // Remove old listener, no need to add fetchNotes listener here
         connectBtn.removeEventListener('click', connectNip07);
-        connectBtn.addEventListener('click', fetchNotes);
-        connectBtn.disabled = false;
+        // connectBtn.addEventListener('click', fetchNotes); // Removed
+        connectBtn.style.display = 'none'; // Hide the button after connection
+        // connectBtn.disabled = false; // Button is hidden, disabled state irrelevant
+
+        // Fetch notes immediately after successful connection
+        fetchNotes();
         // Show compose area after connecting
         if (composeAreaDiv) {
             composeAreaDiv.style.display = 'block';
@@ -104,13 +134,14 @@ async function fetchNotes() {
         // 4. Make the request and subscribe
         notesSubscription = relayGroup.req(filters).pipe(
             // Tap into the stream BEFORE the final subscription
-            tap(response => {
+            // @ts-ignore - Suppressing RxJS version conflict error
+            tap((response: any) => { // Use 'any' as workaround for RxJS type conflict
                 // Add events to the EventStore, ignore EOSE here
                 if (typeof response !== 'string' && response?.kind !== undefined) {
                      // Basic validation before adding
                     if (response.content !== undefined && response.pubkey !== undefined && response.created_at !== undefined) {
-                        console.log('Adding event to EventStore:', response.id);
-                        eventStore.add(response as NostrEvent); // Corrected method name
+                        // console.log('Adding event to EventStore:', response.id, 'Kind:', response.kind); // Keep log concise
+                        eventStore.add(response as NostrEvent);
                     } else {
                          console.warn('Received invalid event structure, not adding to store:', response);
                     }
@@ -165,14 +196,14 @@ async function fetchNotes() {
         if (statusDiv) statusDiv.textContent = `Status: Setup Error - ${errorMessage}`;
         if (connectBtn) connectBtn.disabled = false;
     }
-}
+    }
 
-// Initial setup: Attach NIP-07 connection handler first
-if (connectBtn) {
-    connectBtn.addEventListener('click', connectNip07);
-} else {
-    console.error('Connect button not found');
-}
+    // Initial setup: Attach NIP-07 connection handler first
+    if (connectBtn) {
+        connectBtn.addEventListener('click', connectNip07);
+    } else {
+        console.error('Connect button not found after DOMContentLoaded');
+    }
 
 // --- Step 4: Fetching & Displaying Notes using QueryStore ---
 
@@ -192,9 +223,26 @@ const containsOnlyEmoji = (text: string): boolean => {
 // Using SimpleQuery for basic event kind filtering
 const notesQuery = queryStore.createQuery(TimelineQuery, [{ kinds: [1] }]); // Use TimelineQuery
 
+// Helper function to get profile HTML using cache
+function getProfileHtml(pubkey: string): string {
+    const profileData = profileCache.get(pubkey);
+    let pictureUrl: string | undefined = profileData?.picture;
+
+    // console.log(`Cache check for ${pubkey.substring(0,6)}:`, profileData); // Debug log
+
+    const fallbackUrl = `https://robohash.org/${pubkey}`;
+    // Ensure pictureUrl is a non-empty string before using it
+    const finalUrl = (pictureUrl && pictureUrl.trim() !== '') ? pictureUrl.trim() : fallbackUrl;
+
+    // Use the same class as the original placeholder for styling consistency
+    // Added inline styles matching original div and object-fit: cover
+    return `<img src="${finalUrl}" alt="Profile for ${pubkey.substring(0, 6)}" class="profile-pic" style="width: 30px; height: 30px; border-radius: 50%; margin-right: 10px; object-fit: cover;">`;
+}
+
+
 // Subscribe to the query to update the UI
 // TimelineQuery returns NostrEvent[]
-notesQuery.subscribe((notes: NostrEvent[] | undefined) => { // Type includes undefined
+    notesQuery.subscribe((notes: NostrEvent[] | undefined) => { // Type includes undefined
     // Handle the undefined case
     if (notes === undefined) {
         console.log("TimelineQuery emitted undefined (potentially initial state or no matching events)");
@@ -203,7 +251,93 @@ notesQuery.subscribe((notes: NostrEvent[] | undefined) => { // Type includes und
         return;
     }
     // Proceed if notes is an array
-    if (!notesListDiv) return;
+    // *** ADDED LOGGING ***
+    console.log('Raw notes received by notesQuery.subscribe:', JSON.stringify(notes.map(n => ({id: n.id, content: n.content, created_at: n.created_at})), null, 2));
+
+    if (!notesListDiv) return; // Keep this check
+
+    // --- Fetch Profile Data Logic ---
+    const currentPubkeys = new Set(notes.map(note => note.pubkey));
+    const newPubkeysToFetch = [...currentPubkeys].filter(pk => !requestedProfilePubkeys.has(pk));
+
+    if (newPubkeysToFetch.length > 0) {
+        console.log(`Requesting Kind 0 profiles for ${newPubkeysToFetch.length} new pubkeys:`, newPubkeysToFetch.map(pk => pk.substring(0,6)));
+        newPubkeysToFetch.forEach(pk => requestedProfilePubkeys.add(pk)); // Add immediately to prevent re-requesting
+
+        const profileFilter: Filter[] = [{
+            kinds: [0],
+            authors: newPubkeysToFetch,
+        }];
+
+        // Unsubscribe from previous profile request if any
+        // Note: This simple unsub/resub might cause UI flicker if profiles arrive slowly.
+        // A more robust solution might manage subscriptions per pubkey or use a different query pattern.
+        if (profileSubscription) {
+             console.log('Unsubscribing from previous profile request.');
+             profileSubscription.unsubscribe();
+             profileSubscription = null;
+        }
+
+
+        // Make the request for profiles, pipe through tap operator to update cache and store
+        profileSubscription = relayGroup.req(profileFilter).pipe(
+             // @ts-ignore - Suppressing RxJS version conflict error
+             tap((response: any) => { // Use 'any' as workaround for RxJS type conflict
+                // Add events to the EventStore AND update cache
+                if (typeof response !== 'string' && response?.kind === 0) { // Process only Kind 0 here
+                     // Basic validation before adding
+                    if (response.content !== undefined && response.pubkey !== undefined && response.created_at !== undefined) {
+                        const event = response as NostrEvent;
+                        eventStore.add(event); // Add to store regardless of cache comparison
+
+                        // Update profile cache - only update if newer than cached
+                        try {
+                            const existingCachedProfile = profileCache.get(event.pubkey);
+                            const cachedTimestamp = existingCachedProfile?.created_at ?? 0; // Get timestamp from cache
+
+                            // Only parse and update cache if the incoming event is newer
+                            if (event.created_at >= cachedTimestamp) { // Use >= to handle first event
+                                 const profileContent: ProfileData = JSON.parse(event.content);
+                                 // console.log(`Updating profile cache for ${event.pubkey.substring(0,6)} with event ${event.id} (ts: ${event.created_at})`);
+                                 profileCache.set(event.pubkey, {
+                                     picture: profileContent.picture,
+                                     name: profileContent.name,
+                                     created_at: event.created_at // Store timestamp in cache
+                                 });
+                                 // Trigger UI refresh indirectly:
+                                 // Since the profile cache is updated, the *next* time notesQuery emits,
+                                 // getProfileHtml will use the new data. We rely on notesQuery emitting
+                                 // due to the eventStore.add() call above (assuming QueryStore notices).
+                            } else {
+                                 // console.log(`Ignoring older profile event ${event.id} for ${event.pubkey.substring(0,6)}`);
+                            }
+
+                        } catch (e) {
+                             console.warn(`Failed to parse profile content for event ${event.id}:`, e);
+                        }
+
+                    } else {
+                         console.warn('Received invalid profile event structure, not adding to store:', response);
+                    }
+                } // Ignore non-Kind 0 events from this request
+            })
+        ).subscribe({
+            next: (response: any) => { // Use any
+                if (response === "EOSE") {
+                    console.log(`Profile request EOSE received for authors: ${newPubkeysToFetch.map(pk => pk.substring(0,6))}`);
+                }
+                // Event processing happens in tap
+            },
+            error: (err: any) => { // Use any
+                console.error('Profile subscription error:', err);
+            },
+            complete: () => {
+                console.log('Profile subscription stream completed.');
+            }
+        });
+    }
+    // --- End Fetch Profile Data Logic ---
+
     console.log(`QueryStore updated with ${notes.length} kind:1 notes.`);
 
     // Clear the current list before rendering filtered notes
@@ -217,17 +351,32 @@ notesQuery.subscribe((notes: NostrEvent[] | undefined) => { // Type includes und
 
     console.log(`Rendering ${emojiNotes.length} emoji-only notes.`);
 
+    // *** ADDED NULL CHECK *** (Keep this one)
+    if (!notesListDiv) {
+        console.error("notesListDiv is null inside notesQuery subscription, cannot render notes.");
+        return;
+    }
+
     // Render the filtered notes
     emojiNotes.forEach(event => {
         const noteElement = document.createElement('div');
-        noteElement.classList.add('note');
-        // Basic rendering - includes reply button now
+        // Use the message class from index.html for consistency
+        noteElement.classList.add('message'); // Changed from 'note' to 'message'
+
+        // Get profile HTML using the helper function
+        const profileHtml = getProfileHtml(event.pubkey);
+
+        // Updated rendering - includes profile pic and reply button
         noteElement.innerHTML = `
-            <p style="font-size: 1.5em;">${event.content}</p> <!-- Larger font for emojis -->
-            <small>By: ${event.pubkey.substring(0, 8)}... at ${new Date(event.created_at * 1000).toLocaleString()}</small>
-            <button class="reply-btn" data-event-id="${event.id}" data-pubkey="${event.pubkey}" title="Reply to this note">↩️ Reply</button>
+            ${profileHtml} <!-- Profile picture/Robohash -->
+            <div class="message-content">${event.content}</div> <!-- Use message-content class -->
+            <div class="message-actions"> <!-- Use message-actions class -->
+                 <button class="reply-btn" data-event-id="${event.id}" data-pubkey="${event.pubkey}" title="Reply to this note">↩️ Reply</button>
+            </div>
+            <!-- Optional: Add timestamp/author info if desired -->
+            <!-- <small>By: ${event.pubkey.substring(0, 8)}... at ${new Date(event.created_at * 1000).toLocaleString()}</small> -->
         `;
-        notesListDiv.appendChild(noteElement); // Append to keep order (or use insertBefore if needed)
+        notesListDiv!.appendChild(noteElement); // Append to keep order
     });
 });
 
@@ -237,7 +386,8 @@ notesQuery.subscribe((notes: NostrEvent[] | undefined) => { // Type includes und
 // --- Step 5: Posting New Notes ---
 
 // Function to handle sending a note
-async function sendNote() {
+    // --- Posting New Notes ---
+    async function sendNote() {
     if (!composeInputDiv || !sendBtn || !nip07Signer || !userPubkey) {
         console.error("Cannot send note: Missing input, button, signer, or pubkey.");
         return;
@@ -286,9 +436,11 @@ async function sendNote() {
         // The event() method returns an Observable. We need to subscribe to trigger it.
         // We'll use firstValueFrom to convert the Observable to a Promise that resolves
         // with the first emission (the PublishResponse).
-        const publishResponse = await firstValueFrom(relayGroup.event(signedEvent));
+        // Use 'any' workaround for firstValueFrom type conflict
+        const publishResponse = await firstValueFrom(relayGroup.event(signedEvent) as any) as PublishResponse;
         console.log("Publish response:", publishResponse);
 
+        // Check publishResponse properties
         if (!publishResponse.ok) {
             throw new Error(`Failed to publish: ${publishResponse.message || 'Unknown relay error'}`);
         }
@@ -305,51 +457,62 @@ async function sendNote() {
         sendBtn.disabled = false;
         sendBtn.textContent = '➡️ Send';
     }
-}
+    }
 
-// Add event listener for the send button
-if (sendBtn) {
-    sendBtn.addEventListener('click', sendNote);
-} else {
-    console.error("Send button not found");
-}
+    // Add event listener for the send button
+    if (sendBtn) {
+        sendBtn.addEventListener('click', sendNote);
+    } else {
+        console.error("Send button not found after DOMContentLoaded");
+    }
 
-// Add event listener for the emoji panel (using event delegation)
-if (emojiPanelDiv && composeInputDiv) {
-    emojiPanelDiv.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement; // Cast target once
-        // Check if target exists, is a SPAN, and has textContent
-        if (target && target.tagName === 'SPAN' && target.textContent) {
-            // Ensure composeInputDiv.textContent is treated as a string (even if initially null)
-            composeInputDiv.textContent = (composeInputDiv.textContent || '') + target.textContent;
-            // Optional: Focus input after adding emoji
-            // composeInputDiv.focus();
-        }
-    });
-} else {
-    console.error("Emoji panel or compose input not found");
-}
+    // Add event listener for the emoji panel (using event delegation)
+    if (emojiPanelDiv && composeInputDiv) {
+        emojiPanelDiv.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement; // Cast target once
+            // Check if target exists, is a SPAN, and has textContent
+            if (target && target.tagName === 'SPAN' && target.textContent) {
+                // Ensure composeInputDiv.textContent is treated as a string (even if initially null)
+                // Need to check composeInputDiv again inside the listener as it might be null initially
+                const currentComposeInput = document.getElementById('compose-input');
+                if (currentComposeInput) {
+                    currentComposeInput.textContent = (currentComposeInput.textContent || '') + target.textContent;
+                    // Optional: Focus input after adding emoji
+                    // currentComposeInput.focus();
+                }
+            }
+        });
+    } else {
+        console.error("Emoji panel or compose input not found after DOMContentLoaded");
+    }
 
 // --- Step 6: Replying to Notes ---
 
 // Add event listener for reply buttons (using event delegation on notes list)
-if (notesListDiv && composeInputDiv) {
-    notesListDiv.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        if (target.classList.contains('reply-btn')) {
-            const eventId = target.getAttribute('data-event-id');
-            const pubkey = target.getAttribute('data-pubkey');
+    // --- Replying to Notes ---
+    if (notesListDiv && composeInputDiv) {
+        notesListDiv.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('reply-btn')) {
+                const eventId = target.getAttribute('data-event-id');
+                const pubkey = target.getAttribute('data-pubkey');
 
-            if (eventId && pubkey) {
-                replyContext = { eventId, pubkey };
-                console.log('Set reply context:', replyContext);
-                // Optional: Update UI to indicate a reply is being composed
-                composeInputDiv.focus(); // Focus input for reply
-                // You could add a visual indicator near the compose box
-                alert(`Replying to note ${eventId.substring(0, 6)}... by ${pubkey.substring(0, 6)}...`); // Simple alert for now
+                if (eventId && pubkey) {
+                    replyContext = { eventId, pubkey };
+                    console.log('Set reply context:', replyContext);
+                    // Optional: Update UI to indicate a reply is being composed
+                    // Need to check composeInputDiv again inside the listener
+                     const currentComposeInput = document.getElementById('compose-input');
+                     if (currentComposeInput) {
+                        currentComposeInput.focus(); // Focus input for reply
+                     }
+                    // You could add a visual indicator near the compose box
+                    alert(`Replying to note ${eventId.substring(0, 6)}... by ${pubkey.substring(0, 6)}...`); // Simple alert for now
+                }
             }
-        }
-    });
-} else {
-     console.error("Notes list or compose input not found for reply listener");
-}
+        });
+    } else {
+         console.error("Notes list or compose input not found for reply listener after DOMContentLoaded");
+    }
+
+}); // End of DOMContentLoaded listener
