@@ -20,6 +20,7 @@ let composeAreaDiv: HTMLElement | null = null;
 let composeInputDiv: HTMLElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
 let emojiPanelDiv: HTMLElement | null = null;
+let userProfilePicContainer: HTMLElement | null = null; // For status bar profile pic
 const relays = ['wss://relay.nexel.space']; // Example relays
 
 // 1. Initialize RelayPool
@@ -59,6 +60,19 @@ document.addEventListener('DOMContentLoaded', () => {
     composeInputDiv = document.getElementById('compose-input');
     sendBtn = document.getElementById('sendBtn') as HTMLButtonElement | null;
     emojiPanelDiv = document.getElementById('emoji-panel');
+    userProfilePicContainer = document.getElementById('user-profile-pic-container'); // Assign status bar container
+
+    // --- Status Bar Profile Pic Update ---
+    function updateUserStatusBarProfilePic(pubkey: string) {
+        if (userProfilePicContainer) {
+            // console.log(`Updating status bar profile pic for ${pubkey.substring(0,6)}`);
+            // Reuse existing helper, assuming styles are okay or handled by CSS
+            const profileHtml = getProfileHtml(pubkey);
+            userProfilePicContainer.innerHTML = profileHtml;
+        } else {
+            console.error("User profile pic container not found in status bar.");
+        }
+    }
 
     // --- NIP-07 Connection ---
     async function connectNip07() {
@@ -85,7 +99,59 @@ document.addEventListener('DOMContentLoaded', () => {
         // connectBtn.disabled = false; // Button is hidden, disabled state irrelevant
 
         // Fetch notes immediately after successful connection
-        fetchNotes();
+        fetchNotes(); // Fetch notes (which also triggers profile requests for authors)
+
+        // Update status bar with initial (likely Robohash) profile pic
+        updateUserStatusBarProfilePic(userPubkey);
+
+        // Specifically request logged-in user's profile if not already requested by fetchNotes logic
+        if (!requestedProfilePubkeys.has(userPubkey)) {
+            console.log(`Requesting logged-in user's profile (${userPubkey.substring(0,6)}) specifically`);
+            requestedProfilePubkeys.add(userPubkey); // Mark as requested
+            const userProfileFilter: Filter[] = [{ kinds: [0], authors: [userPubkey], limit: 1 }];
+
+            // Use a fire-and-forget request; relies on the main tap operator to process the result
+             relayGroup.req(userProfileFilter).pipe(
+                 // @ts-ignore - Suppressing RxJS version conflict error
+                 tap((response: any) => { // Use 'any' as workaround for RxJS type conflict
+                    // Add events to the EventStore AND update cache
+                    if (typeof response !== 'string' && response?.kind === 0) { // Process only Kind 0 here
+                         // Basic validation before adding
+                        if (response.content !== undefined && response.pubkey !== undefined && response.created_at !== undefined) {
+                            const event = response as NostrEvent;
+                            eventStore.add(event); // Add to store regardless of cache comparison
+
+                            // Update profile cache - only update if newer than cached
+                            try {
+                                const existingCachedProfile = profileCache.get(event.pubkey);
+                                const cachedTimestamp = existingCachedProfile?.created_at ?? 0; // Get timestamp from cache
+
+                                // Only parse and update cache if the incoming event is newer
+                                if (event.created_at >= cachedTimestamp) { // Use >= to handle first event
+                                     const profileContent: ProfileData = JSON.parse(event.content);
+                                     // console.log(`Updating profile cache for ${event.pubkey.substring(0,6)} with event ${event.id} (ts: ${event.created_at})`);
+                                     profileCache.set(event.pubkey, {
+                                         picture: profileContent.picture,
+                                         name: profileContent.name,
+                                         created_at: event.created_at // Store timestamp in cache
+                                     });
+                                     // If this profile update is for the logged-in user, update the status bar pic
+                                     if (event.pubkey === userPubkey) {
+                                         updateUserStatusBarProfilePic(userPubkey);
+                                     }
+                                }
+                            } catch (e) {
+                                 console.warn(`Failed to parse profile content for event ${event.id}:`, e);
+                            }
+                        } else {
+                             console.warn('Received invalid profile event structure, not adding to store:', response);
+                        }
+                    } // Ignore non-Kind 0 events from this request
+                })
+             ).subscribe({ // Minimal subscriber just to trigger the request
+                 error: (err: any) => console.error("Error fetching logged-in user profile:", err)
+             });
+        }
         // Show compose area after connecting
         if (composeAreaDiv) {
             composeAreaDiv.style.display = 'block';
@@ -304,11 +370,12 @@ function getProfileHtml(pubkey: string): string {
                                      name: profileContent.name,
                                      created_at: event.created_at // Store timestamp in cache
                                  });
-                                 // Trigger UI refresh indirectly:
-                                 // Since the profile cache is updated, the *next* time notesQuery emits,
-                                 // getProfileHtml will use the new data. We rely on notesQuery emitting
-                                 // due to the eventStore.add() call above (assuming QueryStore notices).
-                            } else {
+                                 // If this profile update is for the logged-in user, update the status bar pic
+                                 if (event.pubkey === userPubkey) {
+                                     updateUserStatusBarProfilePic(userPubkey);
+                                 }
+                                 // UI refresh for notes list happens when notesQuery emits.
+                        } else {
                                  // console.log(`Ignoring older profile event ${event.id} for ${event.pubkey.substring(0,6)}`);
                             }
 
