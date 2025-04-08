@@ -209,18 +209,18 @@ async function fetchNotes() {
             // No limit, no since - just live kind 1
         }];
 
-        console.log('Requesting history filter:', JSON.stringify(historyFilter));
-        console.log('Requesting live filter:', JSON.stringify(liveFilter));
+        // console.log('Requesting history filter:', JSON.stringify(historyFilter)); // Removed debug log
+        // console.log('Requesting live filter:', JSON.stringify(liveFilter)); // Removed debug log
 
         // Shared tap operator for adding events to the store
         const storeEventTap = tap((response: any) => { // Use 'any' as workaround
-            if (typeof response !== 'string' && response?.kind !== undefined) {
-                if (response.content !== undefined && response.pubkey !== undefined && response.created_at !== undefined) {
-                    console.log(`[storeEventTap] Attempting to add event: ${response.id} Kind: ${response.kind} Content: "${response.content}"`);
-                    eventStore.add(response as NostrEvent);
-                } else {
-                     console.warn('Received invalid event structure, not adding to store:', response);
-                }
+            // Check if it's a valid NostrEvent object before adding
+            if (typeof response === 'object' && response?.id && response.kind !== undefined && response.pubkey && response.created_at !== undefined && response.content !== undefined) {
+                // console.log(`[storeEventTap] Adding event: ${response.id}`); // Removed debug log
+                eventStore.add(response as NostrEvent);
+            } else if (typeof response !== 'string' && response !== 'EOSE') {
+                 // Log if it's not a string, not EOSE, and not a valid event structure
+                 console.warn('Received invalid event structure, not adding to store:', response);
             }
         });
 
@@ -250,7 +250,7 @@ async function fetchNotes() {
                 storeEventTap, // Add events to store
                 // Removed catchError, using retry instead
                 retry({ // Add retry logic
-                    delay: (error, retryCount) => {
+                    delay: (error: any, retryCount: number) => { // Add types
                         console.warn(`Live subscription error for ${relay.url} (retry ${retryCount}):`, error);
                         console.log(`Retrying connection to ${relay.url} in 5 seconds...`);
                         return timer(5000); // Use timer for delay
@@ -347,7 +347,7 @@ function getProfileHtml(pubkey: string): string {
     }
     // Proceed if notes is an array
     // *** ADDED LOGGING ***
-    console.log('Raw notes received by notesQuery.subscribe:', JSON.stringify(notes.map(n => ({id: n.id, content: n.content, created_at: n.created_at})), null, 2));
+    // console.log('Raw notes received by notesQuery.subscribe:', JSON.stringify(notes.map(n => ({id: n.id, content: n.content, created_at: n.created_at})), null, 2)); // Removed debug log
 
     if (!notesListDiv) return; // Keep this check
 
@@ -434,7 +434,7 @@ function getProfileHtml(pubkey: string): string {
     }
     // --- End Fetch Profile Data Logic ---
 
-    console.log(`QueryStore updated with ${notes.length} kind:1 notes.`);
+    // console.log(`QueryStore updated with ${notes.length} kind:1 notes.`); // Removed debug log
 
     // Clear the current list before rendering filtered notes
     notesListDiv.innerHTML = '';
@@ -445,7 +445,7 @@ function getProfileHtml(pubkey: string): string {
         .filter(event => containsOnlyEmoji(event.content))
         .sort((a, b) => b.created_at - a.created_at);
 
-    console.log(`Rendering ${emojiNotes.length} emoji-only notes.`);
+    // console.log(`Rendering ${emojiNotes.length} emoji-only notes.`); // Removed debug log
 
     // *** ADDED NULL CHECK *** (Keep this one)
     if (!notesListDiv) {
@@ -561,9 +561,9 @@ function getProfileHtml(pubkey: string): string {
         };
 
         // 2. Sign event using ExtensionSigner
-        console.log("Signing event template:", template);
+        // console.log("Signing event template:", template); // Removed debug log
         const signedEvent = await nip07Signer.signEvent(template);
-        console.log("Signed event:", signedEvent);
+        // console.log("Signed event:", signedEvent); // Removed debug log
 
         // 3. Publish using applesauce-relay
         // relayGroup is now guaranteed to be initialized
@@ -573,7 +573,7 @@ function getProfileHtml(pubkey: string): string {
         // with the first emission (the PublishResponse).
         // Use 'any' workaround for firstValueFrom type conflict
         const publishResponse = await firstValueFrom(relayGroup.event(signedEvent) as any) as PublishResponse;
-        console.log("Publish response:", publishResponse);
+        // console.log("Publish response:", publishResponse); // Removed debug log
 
         // Check publishResponse properties
         if (!publishResponse.ok) {
@@ -634,7 +634,7 @@ function getProfileHtml(pubkey: string): string {
 
                 if (eventId && pubkey) {
                     replyContext = { eventId, pubkey };
-                    console.log('Set reply context:', replyContext);
+                    // console.log('Set reply context:', replyContext); // Removed debug log
                     // Optional: Update UI to indicate a reply is being composed
                     // Need to check composeInputDiv again inside the listener
                      const currentComposeInput = document.getElementById('compose-input');
