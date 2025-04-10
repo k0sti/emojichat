@@ -53,8 +53,9 @@ interface ProfileData {
 const profileCache = new Map<string, ProfileData>();
 
 // --- Emoji Data ---
-// Expanded list with more granular categories
-const emojiCategories = [
+
+// Original hardcoded list (will be used as input for dynamic generation)
+const originalEmojiCategories = [
     // Smileys & Emotion
     { id: 'face-smiling', name: 'Face Smiling', icon: '😀', emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇'] },
     { id: 'face-affection', name: 'Face Affection', icon: '😍', emojis: ['🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪'] },
@@ -148,7 +149,60 @@ const emojiCategories = [
     { id: 'flags', name: 'Flags', icon: '🏳️‍🌈', emojis: ['🏳️', '🏴', '🏁', '🚩', '🏳️‍🌈', '🏳️‍⚧️', '🏴‍☠️', '🇦🇨', '🇦🇩', '🇦🇪', '🇦🇫', '🇦🇬', '🇦🇮', '🇦🇱', '🇦🇲', '🇦🇴', '🇦🇶', '🇦🇷', '🇦🇸', '🇦🇹', '🇦🇺', '🇦🇼', '🇦🇽', '🇦🇿', '🇧🇦', '🇧🇧', '🇧🇩', '🇧🇪', '🇧🇫', '🇧🇬', '🇧🇭', '🇧🇮', '🇧🇯', '🇧🇱', '🇧🇲', '🇧🇳', '🇧🇴', '🇧🇶', '🇧🇷', '🇧🇸', '🇧🇹', '🇧🇻', '🇧🇼', '🇧🇾', '🇧🇿', '🇨🇦', '🇨🇨', '🇨🇩', '🇨🇫', '🇨🇬', '🇨🇭', '🇨🇮', '🇨🇰', '🇨🇱', '🇨🇲', '🇨🇳', '🇨🇴', '🇨🇵', '🇨🇷', '🇨🇺', '🇨🇻', '🇨🇼', '🇨🇽', '🇨🇾', '🇨🇿', '🇩🇪', '🇩🇬', '🇩🇯', '🇩🇰', '🇩🇲', '🇩🇴', '🇩🇿', '🇪🇦', '🇪🇨', '🇪🇪', '🇪🇬', '🇪🇭', '🇪🇷', '🇪🇸', '🇪🇹', '🇪🇺', '🇫🇮', '🇫🇯', '🇫🇰', '🇫🇲', '🇫🇴', '🇫🇷', '🇬🇦', '🇬🇧', '🇬🇩', '🇬🇪', '🇬🇫', '🇬🇬', '🇬🇭', '🇬🇮', '🇬🇱', '🇬🇲', '🇬🇳', '🇬🇵', '🇬🇶', '🇬🇷', '🇬🇸', '🇬🇹', '🇬🇺', '🇬🇼', '🇬🇾', '🇭🇰', '🇭🇲', '🇭🇳', '🇭🇷', '🇭🇹', '🇭🇺', '🇮🇨', '🇮🇩', '🇮🇪', '🇮🇱', '🇮🇲', '🇮🇳', '🇮🇴', '🇮🇶', '🇮🇷', '🇮🇸', '🇮🇹', '🇯🇪', '🇯🇲', '🇯🇴', '🇯🇵', '🇰🇪', '🇰🇬', '🇰🇭', '🇰🇮', '🇰🇲', '🇰🇳', '🇰🇵', '🇰🇷', '🇰🇼', '🇰🇾', '🇰🇿', '🇱🇦', '🇱🇧', '🇱🇨', '🇱🇮', '🇱🇰', '🇱🇷', '🇱🇸', '🇱🇹', '🇱🇺', '🇱🇻', '🇱🇾', '🇲🇦', '🇲🇨', '🇲🇩', '🇲🇪', '🇲🇫', '🇲🇬', '🇲🇭', '🇲🇰', '🇲🇱', '🇲🇲', '🇲🇳', '🇲🇴', '🇲🇵', '🇲🇶', '🇲🇷', '🇲🇸', '🇲🇹', '🇲🇺', '🇲🇻', '🇲🇼', '🇲🇽', '🇲🇾', '🇲🇿', '🇳🇦', '🇳🇨', '🇳🇪', '🇳🇫', '🇳🇬', '🇳🇮', '🇳🇱', '🇳🇴', '🇳🇵', '🇳🇷', '🇳🇺', '🇳🇿', '🇴🇲', '🇵🇦', '🇵🇪', '🇵🇫', '🇵🇬', '🇵🇭', '🇵🇰', '🇵🇱', '🇵🇲', '🇵🇳', '🇵🇷', '🇵🇸', '🇵🇹', '🇵🇼', '🇵🇾', '🇶🇦', '🇷🇪', '🇷🇴', '🇷🇸', '🇷🇺', '🇷🇼', '🇸🇦', '🇸🇧', '🇸🇨', '🇸🇩', '🇸🇪', '🇸🇬', '🇸🇭', '🇸🇮', '🇸🇯', '🇸🇰', '🇸🇱', '🇸🇲', '🇸🇳', '🇸🇴', '🇸🇷', '🇸🇸', '🇸🇹', '🇸🇻', '🇸🇽', '🇸🇾', '🇸🇿', '🇹🇦', '🇹🇨', '🇹🇩', '🇹🇫', '🇹🇬', '🇹🇭', '🇹🇯', '🇹🇰', '🇹🇱', '🇹🇲', '🇹🇳', '🇹🇴', '🇹🇷', '🇹🇹', '🇹🇻', '🇹🇼', '🇹🇿', '🇺🇦', '🇺🇬', '🇺🇲', '🇺🇳', '🇺🇸', '🇺🇾', '🇺🇿', '🇻🇦', '🇻🇨', '🇻🇪', '🇻🇬', '🇻🇮', '🇻🇳', '🇻🇺', '🇼🇫', '🇼🇸', '🇽🇰', '🇾🇪', '🇾🇹', '🇿🇦', '🇿🇲', '🇿🇼', '🏴󠁧󠁢󠁥󠁮󠁧󠁿', '🏴󠁧󠁢󠁳󠁣󠁴󠁿', '🏴󠁧󠁢󠁷󠁬󠁳󠁿'] }
 ];
 
-// Function to handle NIP-07 connection
+// Function to dynamically generate emoji categories
+function generateEmojiCategories(inputCategories: { emojis: string[] }[]): { id: string; name: string; icon: string; emojis: string[] }[] {
+    // 1. Extract all unique emojis
+    const allEmojisSet = new Set<string>();
+    inputCategories.forEach(category => {
+        category.emojis.forEach(emoji => allEmojisSet.add(emoji));
+    });
+    const allEmojis = Array.from(allEmojisSet);
+
+    // 2. Calculate dimensions
+    const totalEmojis = allEmojis.length;
+    if (totalEmojis === 0) {
+        return []; // Return empty if no emojis found
+    }
+    const numCategoriesTarget = Math.round(Math.sqrt(totalEmojis));
+    // Ensure at least one category if there are emojis
+    const numCategories = Math.max(1, numCategoriesTarget);
+    const emojisPerCategory = Math.ceil(totalEmojis / numCategories);
+
+    // 3. & 4. Chunk emojis and generate new categories
+    const newEmojiCategories = [];
+    for (let i = 0; i < numCategories; i++) {
+        const start = i * emojisPerCategory;
+        const end = Math.min((i + 1) * emojisPerCategory, totalEmojis);
+        const chunk = allEmojis.slice(start, end);
+
+        if (chunk.length > 0) { // Only add if chunk is not empty
+            newEmojiCategories.push({
+                id: `group-${i + 1}`,
+                name: `Group ${i + 1}`,
+                icon: chunk[0], // Use the first emoji as icon
+                emojis: chunk
+            });
+        }
+    }
+
+    return newEmojiCategories;
+}
+
+// Generate the categories dynamically
+const emojiCategories = generateEmojiCategories(originalEmojiCategories);
+
+// Function to count total number of used emojis
+function countTotalEmojis() {
+    let totalEmojis = 0;
+
+    // Iterate through each category and sum the number of emojis
+    emojiCategories.forEach(category => {
+        totalEmojis += category.emojis.length;
+    });
+
+    console.log(`Total number of used emojis: ${totalEmojis}`);
+}
+
 // --- DOM Ready Execution ---
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM fully loaded and parsed');
@@ -164,6 +218,9 @@ document.addEventListener('DOMContentLoaded', () => {
     userProfilePicContainer = document.getElementById('user-profile-pic-container'); // Assign status bar container
     cancelReplyContainer = document.getElementById('cancel-reply-container'); // Assign cancel container
     mainContentDiv = document.querySelector('.main-content'); // Assign default parent for compose area
+
+    // Call the function to print the total number of emojis
+    countTotalEmojis();
 
     // --- Status Bar Profile Pic Update ---
     function updateUserStatusBarProfilePic(pubkey: string) {
