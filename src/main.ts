@@ -2,12 +2,13 @@ import { RelayPool, SubscriptionResponse, PublishResponse, completeOnEose } from
 import { EventStore, QueryStore } from 'applesauce-core';
 import { TimelineQuery } from 'applesauce-core/queries/simple';
 import { getNip10References } from 'applesauce-core/helpers/threading'; // Import NIP-10 helper
-import { getProfileContent } from 'applesauce-core/helpers'; // Corrected Import path for getProfileContent
+import { getProfileContent } from 'applesauce-core/helpers';
 import { NostrEvent, Filter, Event, EventTemplate } from 'nostr-tools';
 import { tap } from 'rxjs/operators';
 import { merge, of, catchError, retry, delay, timer } from 'rxjs'; // Import timer for retry delay
 import { firstValueFrom } from 'rxjs'; // Import firstValueFrom
 import { ExtensionSigner } from 'applesauce-signers'; // Import ExtensionSigner
+import { publishRelays, profileRelays } from './config'; // Import relay configurations
 
 console.log('EmojiChat Client Script Loaded');
 
@@ -26,7 +27,6 @@ let emojiPanelDiv: HTMLElement | null = null;
 let userProfilePicContainer: HTMLElement | null = null; // For status bar profile pic
 let mainContentDiv: HTMLElement | null = null; // Default parent for compose area
 let cancelReplyContainer: HTMLElement | null = null; // Container for cancel button
-const relays = ['wss://relay.nexel.space']; // Example relays
 
 // 1. Initialize RelayPool
 const pool = new RelayPool();
@@ -36,9 +36,14 @@ const queryStore = new QueryStore(eventStore); // Link QueryStore to EventStore
 let historySubscription: any | null = null; // For initial history
 let liveSubscription: any | null = null; // For live updates
 // Initialize the relay group immediately after the pool
-const relayGroup = pool.group(relays);
-console.log(`RelayGroup initialized immediately for: ${relays.join(', ')}`);
+const publishRelayGroup = pool.group(publishRelays);
+console.log(`Publish RelayGroup initialized for: ${publishRelays.join(', ')}`);
 let replyContext: { eventId: string; pubkey: string } | null = null; // To store reply target
+
+// Create a separate RelayGroup for fetching profiles
+const profileRelayGroup = pool.group(profileRelays);
+// console.log(`Profile RelayGroup initialized for: ${profileRelays.join(', ')}`); // Keep this commented for less noise
+
 // Removed duplicate declaration
 const requestedProfilePubkeys = new Set<string>(); // Track requested profile pubkeys
 let profileSubscription: any | null = null; // To manage the profile request subscription
@@ -274,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const userProfileFilter: Filter[] = [{ kinds: [0], authors: [userPubkey], limit: 1 }];
 
             // Use a fire-and-forget request; relies on the main tap operator to process the result
-             relayGroup.req(userProfileFilter).pipe(
+             profileRelayGroup.req(userProfileFilter).pipe(
                  // @ts-ignore - Suppressing RxJS version conflict error
                  tap((response: any) => { // Use 'any' as workaround for RxJS type conflict
                     // Add events to the EventStore AND update cache
@@ -361,7 +366,7 @@ async function fetchNotes() {
         // Note: RelayPool doesn't require explicit connection beforehand.
         // Connections are managed internally when requests are made.
         // Relay group is already initialized globally
-        console.log(`Using pre-initialized RelayGroup for: ${relays.join(', ')}`);
+        console.log(`Using pre-initialized Publish RelayGroup for: ${publishRelays.join(', ')}`);
 
         // 3. Define filters for history and live updates
         const historyLimit = 20;
@@ -390,7 +395,7 @@ async function fetchNotes() {
         });
 
         // 4a. Make the history request using RelayGroup (completes on EOSE)
-        historySubscription = relayGroup.req(historyFilter).pipe(
+        historySubscription = publishRelayGroup.req(historyFilter).pipe(
             // @ts-ignore - Suppressing RxJS version conflict error
             storeEventTap,
             completeOnEose()
@@ -411,7 +416,7 @@ async function fetchNotes() {
         });
 
         // 4b. Manually create and merge live subscriptions for each relay
-        const liveRelayStreams = relayGroup.relays.map(relay =>
+        const liveRelayStreams = publishRelayGroup.relays.map(relay =>
             relay.req(liveFilter).pipe(
                 // @ts-ignore - Suppressing RxJS version conflict error
                 storeEventTap, // Add events to store
@@ -574,7 +579,7 @@ function getProfileHtml(pubkey: string): string {
 
 
         // Make the request for profiles, pipe through tap operator to update cache and store
-        profileSubscription = relayGroup.req(profileFilter).pipe(
+        profileSubscription = profileRelayGroup.req(profileFilter).pipe(
              // @ts-ignore - Suppressing RxJS version conflict error
              tap((response: any) => { // Use 'any' as workaround for RxJS type conflict
                 // Add events to the EventStore AND update cache
@@ -804,7 +809,7 @@ function getProfileHtml(pubkey: string): string {
         // We'll use firstValueFrom to convert the Observable to a Promise that resolves
         // with the first emission (the PublishResponse).
         // Use 'any' workaround for firstValueFrom type conflict
-        const publishResponse = await firstValueFrom(relayGroup.event(signedEvent) as any) as PublishResponse;
+        const publishResponse = await firstValueFrom(publishRelayGroup.event(signedEvent) as any) as PublishResponse;
         // console.log("Publish response:", publishResponse); // Removed debug log
 
         // Check publishResponse properties
