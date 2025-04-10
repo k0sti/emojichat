@@ -2,6 +2,7 @@ import { RelayPool, SubscriptionResponse, PublishResponse, completeOnEose } from
 import { EventStore, QueryStore } from 'applesauce-core';
 import { TimelineQuery } from 'applesauce-core/queries/simple';
 import { getNip10References } from 'applesauce-core/helpers/threading'; // Import NIP-10 helper
+import { getProfileContent } from 'applesauce-core/helpers'; // Corrected Import path for getProfileContent
 import { NostrEvent, Filter, Event, EventTemplate } from 'nostr-tools';
 import { tap } from 'rxjs/operators';
 import { merge, of, catchError, retry, delay, timer } from 'rxjs'; // Import timer for retry delay
@@ -242,15 +243,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // ExtensionSigner constructor will handle checking for window.nostr internally
 
-    statusDiv.textContent = 'Status: Requesting NIP-07 connection...';
+    // statusDiv.textContent = 'Status: Requesting NIP-07 connection...';
+    console.log('Requesting NIP-07 connection...');
     connectBtn.disabled = true;
 
     try {
         nip07Signer = new ExtensionSigner(); // Instantiate the signer
         // getPublicKey now handles the check and potential errors
         userPubkey = await nip07Signer.getPublicKey();
-        console.log('Connected with pubkey:', userPubkey);
-        statusDiv.textContent = `Status: Connected as ${userPubkey.substring(0, 8)}...`;
+        console.log('NIP-07 connected successfully with pubkey:', userPubkey);
+        // statusDiv.textContent = `Status: Connected as ${userPubkey.substring(0, 8)}...`;
+        console.log(`Connected as ${userPubkey.substring(0, 8)}...`);
         // connectBtn.textContent = 'Fetch Notes'; // No longer needed
         // Remove old listener, no need to add fetchNotes listener here
         connectBtn.removeEventListener('click', connectNip07);
@@ -298,6 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                      // If this profile update is for the logged-in user, update the status bar pic
                                      if (event.pubkey === userPubkey) {
                                          updateUserStatusBarProfilePic(userPubkey);
+                                         console.log(`User status bar profile pic updated for ${userPubkey.substring(0,6)}`);
                                      }
                                 }
                             } catch (e) {
@@ -319,10 +323,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     } catch (error) {
         console.error('NIP-07 connection error:', error);
-        statusDiv.textContent = `Status: NIP-07 Error - ${error instanceof Error ? error.message : 'Failed'}`;
+        // statusDiv.textContent = `Status: NIP-07 Error - ${error instanceof Error ? error.message : 'Failed'}`;
+        console.error(`NIP-07 Error: ${error instanceof Error ? error.message : 'Failed'}`);
         connectBtn.disabled = false;
         nip07Signer = null;
         userPubkey = null;
+        return;
     }
 }
 
@@ -333,7 +339,8 @@ async function fetchNotes() {
         return;
     }
 
-    statusDiv.textContent = 'Status: Connecting & Fetching...';
+    // statusDiv.textContent = 'Status: Connecting & Fetching...';
+    console.log('Connecting to relays & fetching notes...');
     connectBtn.disabled = true;
     notesListDiv.innerHTML = ''; // Clear previous notes
 
@@ -393,11 +400,13 @@ async function fetchNotes() {
             },
             error: (err: any) => {
                 console.error('History subscription error:', err);
-                if (statusDiv) statusDiv.textContent = `Status: History Error - ${err.message || 'Subscription failed'}`;
+                // if (statusDiv) statusDiv.textContent = `Status: History Error - ${err.message || 'Subscription failed'}`;
+                console.error(`History Error: ${err.message || 'Subscription failed'}`);
             },
             complete: () => {
                 console.log('History subscription completed after EOSE.');
-                if (statusDiv) statusDiv.textContent = 'Status: History Loaded, Listening for Live...';
+                // if (statusDiv) statusDiv.textContent = 'Status: History Loaded, Listening for Live...';
+                console.log('History Loaded, Listening for Live...');
             }
         });
 
@@ -424,8 +433,10 @@ liveSubscription = merge(...liveRelayStreams).subscribe({
                  if (typeof response !== 'string') {
                      console.log('Live received event:', (response as NostrEvent).id);
                      // Update status only once after history is done
-                     if (statusDiv && statusDiv.textContent?.includes('Listening')) {
-                         statusDiv.textContent = 'Status: Live Feed Active';
+                     // No status text update needed
+                     if (statusDiv?.getAttribute('data-status') === 'listening') { // Check a data attribute instead
+                         console.log('Live Feed Active');
+                         statusDiv?.setAttribute('data-status', 'active'); // Update status attribute
                      }
                  }
                  // Individual relay EOSEs are ignored by this subscriber
@@ -433,12 +444,14 @@ liveSubscription = merge(...liveRelayStreams).subscribe({
              error: (err: any) => {
                  // This error handler might not be reached if individual streams handle errors
                  console.error('Merged live subscription error (unexpected):', err);
-                 if (statusDiv) statusDiv.textContent = `Status: Live Feed Error - ${err.message || 'Subscription failed'}`;
+                 // if (statusDiv) statusDiv.textContent = `Status: Live Feed Error - ${err.message || 'Subscription failed'}`;
+                 console.error(`Live Feed Error: ${err.message || 'Subscription failed'}`);
              },
              complete: () => {
                  // This should not complete unless all relays disconnect AND handle errors with of()
                  console.log('Merged live subscription stream completed (unexpected?).');
-                 if (statusDiv) statusDiv.textContent = 'Status: Live Feed Disconnected';
+                 // if (statusDiv) statusDiv.textContent = 'Status: Live Feed Disconnected';
+                 console.log('Live Feed Disconnected.');
              }
          });
 
@@ -446,7 +459,8 @@ liveSubscription = merge(...liveRelayStreams).subscribe({
     } catch (error) {
         console.error('Error setting up RelayGroup or subscription:', error);
         const errorMessage = error instanceof Error ? error.message : String(error);
-        if (statusDiv) statusDiv.textContent = `Status: Setup Error - ${errorMessage}`;
+        // if (statusDiv) statusDiv.textContent = `Status: Setup Error - ${errorMessage}`;
+        console.error(`Setup Error: ${errorMessage}`);
         if (connectBtn) connectBtn.disabled = false;
     }
     }
@@ -547,19 +561,20 @@ function getProfileHtml(pubkey: string): string {
                         try {
                             const existingCachedProfile = profileCache.get(event.pubkey);
                             const cachedTimestamp = existingCachedProfile?.created_at ?? 0; // Get timestamp from cache
+                            const profileContent = getProfileContent(event); // Use helper
 
                             // Only parse and update cache if the incoming event is newer
                             if (event.created_at >= cachedTimestamp) { // Use >= to handle first event
-                                 const profileContent: ProfileData = JSON.parse(event.content);
                                  // console.log(`Updating profile cache for ${event.pubkey.substring(0,6)} with event ${event.id} (ts: ${event.created_at})`);
                                  profileCache.set(event.pubkey, {
                                      picture: profileContent.picture,
-                                     name: profileContent.name,
+                                     name: profileContent.name, // Store name too, might be useful later
                                      created_at: event.created_at // Store timestamp in cache
                                  });
                                  // If this profile update is for the logged-in user, update the status bar pic
                                  if (event.pubkey === userPubkey) {
                                      updateUserStatusBarProfilePic(userPubkey);
+                                     console.log(`User status bar profile pic updated after profile fetch for ${userPubkey.substring(0,6)}`);
                                  }
                                  // UI refresh for notes list happens when notesQuery emits.
                         } else {
@@ -688,13 +703,41 @@ function getProfileHtml(pubkey: string): string {
 
     const content = composeInputDiv.textContent?.trim() || '';
     if (!content) {
-        alert("Cannot send empty note!");
+        console.log("Attempted to send empty note.");
+        if (sendBtn) {
+            const originalContent = sendBtn.textContent;
+            const originalTitle = sendBtn.title;
+            sendBtn.textContent = '😟'; // Frowning face
+            sendBtn.title = 'Cannot send empty note';
+            sendBtn.disabled = true; // Also disable temporarily
+            setTimeout(() => {
+                // Restore based on whether it was a reply or not
+                if (sendBtn) { // Add null check
+                    updateComposeUI(replyContext !== null);
+                    sendBtn.disabled = false;
+                }
+            }, 500);
+        }
         return;
     }
     // Basic check: Ensure it's likely only emojis before sending
     if (!containsOnlyEmoji(content)) {
-         alert("Please send only emojis!");
-         return;
+        console.log("Attempted to send non-emoji content:", content);
+        if (sendBtn) {
+            const originalContent = sendBtn.textContent;
+            const originalTitle = sendBtn.title;
+            sendBtn.textContent = '😟'; // Frowning face
+            sendBtn.title = 'Please send only emojis';
+            sendBtn.disabled = true; // Also disable temporarily
+            setTimeout(() => {
+                // Restore based on whether it was a reply or not
+                 if (sendBtn) { // Add null check
+                    updateComposeUI(replyContext !== null);
+                    sendBtn.disabled = false;
+                 }
+            }, 500);
+        }
+        return;
     }
 
 
@@ -751,12 +794,22 @@ function getProfileHtml(pubkey: string): string {
         // TODO: Update UI to remove reply indication if any was added
 
     } catch (error) {
-        console.error("Error sending note:", error);
-        alert(`Error sending note: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error("Error sending note:", errorMessage, error);
+        // Keep button disabled, restore icon to indicate failure but allow retry
+        if (sendBtn) {
+             sendBtn.textContent = '⚠️'; // Warning icon
+             sendBtn.title = `Error: ${errorMessage}`;
+             sendBtn.classList.remove('sending'); // Remove spinner
+             // No need to re-enable button here, allow user to retry manually
+        }
     } finally {
         sendBtn.disabled = false;
         sendBtn.classList.remove('sending'); // Remove spinner class
-        // Icon is restored by updateComposeUI called in sendNote success path
+        // Icon is restored by updateComposeUI called in sendNote success path OR explicitly in error case above
+        // If send was successful, updateComposeUI(false) is called above which resets the icon.
+        // If send failed, we set a warning icon above.
+        // If validation failed, we set a frowning face and restore it via updateComposeUI.
     }
     }
 
@@ -908,18 +961,22 @@ function updateComposeUI(isReplying: boolean) {
                 const pubkey = target.getAttribute('data-pubkey');
                 const messageElement = target.closest('.message'); // Find the parent message div
 
-                if (eventId && pubkey && messageElement && composeAreaDiv) {
+                if (eventId && pubkey && messageElement && composeAreaDiv && composeInputDiv) {
                     replyContext = { eventId, pubkey };
+                    console.log(`Replying to event: ${eventId} from pubkey: ${pubkey.substring(0,6)}`);
 
                     // Move compose area below the message being replied to
                     messageElement.insertAdjacentElement('afterend', composeAreaDiv);
                     updateComposeUI(true); // Update button icon and show cancel button
 
                     // Focus input
-                     const currentComposeInput = document.getElementById('compose-input');
-                     if (currentComposeInput) {
-                        currentComposeInput.focus();
-                     }
+                    // const currentComposeInput = document.getElementById('compose-input'); // Already have composeInputDiv
+                    if (composeInputDiv) {
+                        composeInputDiv.focus();
+                        console.log("Compose input focused for reply.");
+                    }
+                } else {
+                    console.warn("Could not initiate reply - missing data or elements:", { eventId, pubkey, messageElement, composeAreaDiv });
                 }
             }
         });
@@ -928,3 +985,11 @@ function updateComposeUI(isReplying: boolean) {
     }
 
 }); // End of DOMContentLoaded listener
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Add a data attribute to statusDiv for tracking state without visible text
+    if (statusDiv) {
+        statusDiv.setAttribute('data-status', 'initializing');
+        console.log('Status div initialized.');
+    }
+});
