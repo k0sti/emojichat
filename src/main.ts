@@ -475,15 +475,42 @@ liveSubscription = merge(...liveRelayStreams).subscribe({
 // --- Step 4: Fetching & Displaying Notes using QueryStore ---
 
 // Define a function to check if a string contains only emojis and whitespace
-// Basic check: Looks for characters outside common emoji ranges + whitespace. Needs refinement for comprehensive coverage.
-// Source for regex idea: https://stackoverflow.com/questions/37621031/check-if-string-contains-only-emojis
+// This version iterates through characters and checks Unicode code points.
 const containsOnlyEmoji = (text: string): boolean => {
     if (!text) return false;
-    // Remove variation selectors and ZWJ
-    const stripped = text.replace(/[\uFE00-\uFE0F\u200D]/g, '');
-    // Match common emoji ranges, pictographs, transport, regional indicators, and basic whitespace
-    const emojiRegex = /^[\s\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]+$/u;
-    return emojiRegex.test(stripped);
+
+    for (const char of Array.from(text)) { // Use Array.from for proper Unicode iteration
+        const codePoint = char.codePointAt(0);
+
+        // Check if codePoint is valid before proceeding
+        if (codePoint === undefined) {
+             console.warn(`Could not get codePoint for character in text: "${text}"`); // Optional warning
+             continue; // Skip this character if codePoint is undefined
+        }
+
+        // Allow whitespace
+        if (/\s/.test(char)) {
+            continue;
+        }
+
+        // Check if codePoint is within known emoji ranges or modifiers
+        if (
+            codePoint >= 0x1F300 && codePoint <= 0x1FAF8 ||
+            codePoint >= 0x1F004 && codePoint <= 0x1F251 ||
+            codePoint >= 0x2600 && codePoint <= 0x26FF ||  // Misc Symbols
+            codePoint >= 0x2700 && codePoint <= 0x27BF ||  // Dingbats
+            codePoint >= 0xFE00 && codePoint <= 0xFE0F ||  // Variation Selectors
+            codePoint === 0x200D // Zero Width Joiner
+           ) {
+            continue; // Character is a valid emoji or related character
+        } else {
+            // Character is not whitespace and not in any known emoji/modifier range
+            return false;
+        }
+    }
+
+    // If loop completes, all characters are valid
+    return true;
 };
 
 // Create a query for kind:1 notes from the QueryStore
@@ -722,7 +749,10 @@ function getProfileHtml(pubkey: string): string {
     }
     // Basic check: Ensure it's likely only emojis before sending
     if (!containsOnlyEmoji(content)) {
-        console.log("Attempted to send non-emoji content:", content);
+        console.log("Attempted to send non-emoji content :():", content);
+
+        const unicodeHexValues = Array.from(content).map(c => `U+${c.codePointAt(0)!.toString(16).toUpperCase()}`).join(', ');
+        console.log(`Invalid character found in content. Content: "${content}", Hex Values: [${unicodeHexValues}]`);
         if (sendBtn) {
             const originalContent = sendBtn.textContent;
             const originalTitle = sendBtn.title;
